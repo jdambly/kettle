@@ -27,7 +27,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	networkingv1alpha1 "github.com/jdambly/kettle/api/v1alpha1"
+	kettlev1alpha1 "github.com/jdambly/kettle/api/v1alpha1"
 )
 
 var _ = Describe("Network Controller", func() {
@@ -38,20 +38,28 @@ var _ = Describe("Network Controller", func() {
 
 		typeNamespacedName := types.NamespacedName{
 			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+			Namespace: "default",
 		}
-		network := &networkingv1alpha1.Network{}
+		network := &kettlev1alpha1.Network{}
 
 		BeforeEach(func() {
 			By("creating the custom resource for the Kind Network")
 			err := k8sClient.Get(ctx, typeNamespacedName, network)
 			if err != nil && errors.IsNotFound(err) {
-				resource := &networkingv1alpha1.Network{
+				resource := &kettlev1alpha1.Network{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: kettlev1alpha1.NetworkSpec{
+						Name:        "test-network",
+						Vlan:        100,
+						CIDR:        "10.0.0.0/24",
+						Gateway:     "10.0.0.1",
+						NameServers: nil,
+						IPRange:     "10.0.0.10-10.0.0.20",
+						ExcludeIPs:  []string{"10.0.0.11", "10.0.0.12"},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
@@ -59,7 +67,7 @@ var _ = Describe("Network Controller", func() {
 
 		AfterEach(func() {
 			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &networkingv1alpha1.Network{}
+			resource := &kettlev1alpha1.Network{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -77,8 +85,12 @@ var _ = Describe("Network Controller", func() {
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+
+			By("Checking that the resource has been initialized")
+			err = k8sClient.Get(ctx, typeNamespacedName, network)
+			Expect(err).NotTo(HaveOccurred())
+			initialized := controllerReconciler.isConditionPresentAndEqual(network, kettlev1alpha1.InitializedCondition, metav1.ConditionTrue)
+			Expect(initialized).To(BeTrue())
 		})
 	})
 })

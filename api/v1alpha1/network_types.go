@@ -18,11 +18,17 @@ package v1alpha1
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"net"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"strings"
+)
+
+const (
+	InitializedCondition = "Initialized"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -149,6 +155,42 @@ func (n *Network) GetRangeIPs() (net.IP, net.IP, error) {
 		return nil, nil, errors.New("invalid IP range format")
 	}
 	return startIP, endIP, nil
+}
+
+// ShouldReconcile checks if the Network should be reconciled based on the status of the given Network
+// and the current Network
+func (n *Network) ShouldReconcile(network *Network) bool {
+	logger := log.FromContext(context.Background()).WithCallDepth(3)
+
+	if len(n.Status.AllocatedIPs) != len(network.Status.AllocatedIPs) {
+		logger.Info("Allocated IPs are not the same length")
+		return false
+	}
+	if len(n.Status.AllocatableIPs) != len(network.Status.AllocatableIPs) {
+		logger.Info("Allocatable IPs are not the same length")
+		return false
+	}
+	for i := range n.Status.AllocatedIPs {
+		if n.Status.AllocatedIPs[i].IP != network.Status.AllocatedIPs[i].IP {
+			logger.Info("IPs are not equal " + n.Status.AllocatedIPs[i].IP + " " + network.Status.AllocatedIPs[i].IP)
+			return false
+		}
+		if n.Status.AllocatedIPs[i].PodName != network.Status.AllocatedIPs[i].PodName {
+			logger.Info("PodNames are not equal")
+			return false
+		}
+		if n.Status.AllocatedIPs[i].PodUID != network.Status.AllocatedIPs[i].PodUID {
+			logger.Info("PodUIDs are not equal")
+			return false
+		}
+	}
+	for i := range n.Status.AllocatableIPs {
+		if n.Status.AllocatableIPs[i] != network.Status.AllocatableIPs[i] {
+			logger.Info("Allocatable IPs are not equal")
+			return false
+		}
+	}
+	return true
 }
 
 // incrementIP increments the given IP address by 1

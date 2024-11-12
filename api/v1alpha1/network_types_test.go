@@ -9,7 +9,8 @@ import (
 
 var _ = Describe("Network GetAllocatableIPs", func() {
 	var (
-		network *v1alpha1.Network
+		network    *v1alpha1.Network
+		newNetwork *v1alpha1.Network
 	)
 
 	BeforeEach(func() {
@@ -25,6 +26,7 @@ var _ = Describe("Network GetAllocatableIPs", func() {
 			},
 			Status: v1alpha1.NetworkStatus{},
 		}
+		newNetwork = network.DeepCopy()
 	})
 
 	Context("when CIDR is provided", func() {
@@ -69,6 +71,39 @@ var _ = Describe("Network GetAllocatableIPs", func() {
 			allocatableIPs, err := network.GetAllocatableIPs()
 			Expect(err).To(HaveOccurred())
 			Expect(allocatableIPs).To(BeEmpty())
+		})
+	})
+	Context("When status updates have been detected", func() {
+		BeforeEach(func() {
+			network.Status.AllocatedIPs = []v1alpha1.AllocatedIP{
+				{IP: "10.1.0.2", PodName: "test-pod1", PodUID: "1234"},
+				{IP: "10.1.0.3", PodName: "test-pod2", PodUID: "1235"},
+			}
+			newNetwork.Status.AllocatedIPs = []v1alpha1.AllocatedIP{
+				{IP: "10.1.0.2", PodName: "test-pod1", PodUID: "1234"},
+				{IP: "10.1.0.3", PodName: "test-pod2", PodUID: "1235"},
+			}
+			allocatableIPs, err := network.GetAllocatableIPs()
+			newAllocatableIPs, newErr := newNetwork.GetAllocatableIPs()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(newErr).ToNot(HaveOccurred())
+			Expect(allocatableIPs).To(Equal(newAllocatableIPs))
+
+		})
+		It("Returns true when the status are Equal", func() {
+			Expect(network.ShouldReconcile(newNetwork)).To(BeTrue())
+		})
+		It("Returns false when the status are not Equal", func() {
+			newNetwork.Status.AllocatedIPs = []v1alpha1.AllocatedIP{
+				{IP: "10.1.0.2", PodName: "test-pod3", PodUID: "1236"},
+			}
+			Expect(network.ShouldReconcile(newNetwork)).To(BeFalse())
+		})
+		It("Return false when there is duplicate ips", func() {
+			newNetwork.Status.AllocatedIPs = []v1alpha1.AllocatedIP{
+				{IP: "10.1.0.2", PodName: "test-pod3", PodUID: "1236"},
+			}
+			Expect(network.ShouldReconcile(newNetwork)).To(BeFalse())
 		})
 	})
 })
