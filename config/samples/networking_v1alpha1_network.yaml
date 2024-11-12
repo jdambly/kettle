@@ -1,0 +1,9 @@
+apiVersion: networking.kettle.io/v1alpha1
+kind: Network
+metadata:
+  labels:
+    app.kubernetes.io/name: kettle
+    app.kubernetes.io/managed-by: kustomize
+  name: network-sample
+spec:
+  # TODO(user): Add fields here

@@ -7,4 +7,14 @@ layout:
 - go.kubebuilder.io/v4
 projectName: kettle
 repo: github.com/jdambly/kettle
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: kettle.io
+  group: networking
+  kind: Network
+  path: github.com/jdambly/kettle/api/v1alpha1
+  version: v1alpha1
 version: "3"
