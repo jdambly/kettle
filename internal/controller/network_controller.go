@@ -53,6 +53,9 @@ func (r *NetworkReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	err := r.Get(ctx, req.NamespacedName, network)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
+			// Object not found, return. Created objects are automatically garbage collected
+			// this will trigger on a delete
+			// Todo: should we do some cleanup here?
 			r.logger.Info("Network resource not found. Ignoring since object must be deleted")
 			// this is considered a successful reconciliation
 			return ctrl.Result{}, nil
@@ -63,14 +66,20 @@ func (r *NetworkReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// Initialize the Network
-	r.Initialize(network)
+	if network.IsConditionPresentAndEqual(kettlev1alpha1.ConditionInitialized, metav1.ConditionTrue) {
+		r.logger.Info("Network already initialized skipping...")
+	} else {
+		r.logger.Info("Network not initialized, initializing...")
+		r.Initialize(network)
+	}
 
-	// Update the Network status
+	// Update the status of the Network
 	err = r.Status().Update(ctx, network)
 	if err != nil {
 		r.logger.Error(err, "Failed to update Network status")
 		return ctrl.Result{}, err
 	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -83,8 +92,7 @@ func (r *NetworkReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			oldObj := e.ObjectOld.(*kettlev1alpha1.Network)
 			newObj := e.ObjectNew.(*kettlev1alpha1.Network)
-			// check if allocated IPs have changed
-			return !oldObj.ShouldReconcile(newObj)
+			return oldObj.ShouldReconcile(newObj)
 		},
 	}
 	// predicate is used here to make sure the controller triggers when the status is updated
@@ -95,57 +103,52 @@ func (r *NetworkReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-// isConditionPresentAndEqual checks if a condition of the given type and status is present in the Network status
-func (r *NetworkReconciler) isConditionPresentAndEqual(network *kettlev1alpha1.Network, conditionType string, status metav1.ConditionStatus) bool {
-	for _, condition := range network.Status.Conditions {
-		if condition.Type == conditionType && condition.Status == status {
-			return true
-		}
-	}
-	return false
-}
-
-// updateCondition is a helper function to update or add a condition to the Network status
-func (r *NetworkReconciler) updateCondition(network *kettlev1alpha1.Network, condition metav1.Condition) {
-	for i, c := range network.Status.Conditions {
-		if c.Type == condition.Type {
-			network.Status.Conditions[i] = condition
-			return
-		}
-	}
-	network.Status.Conditions = append(network.Status.Conditions, condition)
-}
-
 // Initialize checks if the Network is initialized and if not allocates ip addresses and sets the Initialized condition
 func (r *NetworkReconciler) Initialize(network *kettlev1alpha1.Network) {
-	if r.isConditionPresentAndEqual(network, kettlev1alpha1.InitializedCondition, metav1.ConditionTrue) {
-		r.logger.Info("Network already initialized skipping...")
-	}
-
 	// Allocate IP addresses
 	allocatableIPs, err := network.GetAllocatableIPs()
 	if err != nil {
 		r.logger.Error(err, "Failed to allocate IP addresses")
 		// set the Initialized condition to False
-		r.updateCondition(network, metav1.Condition{
-			Type:               kettlev1alpha1.InitializedCondition,
-			Status:             metav1.ConditionFalse,
-			Reason:             "FailedToAllocateIPs",
-			Message:            "Failed to allocate IP addresses",
-			LastTransitionTime: metav1.Now(),
-		})
+		network.SetConditionInitialized(metav1.ConditionFalse)
 	}
 
 	// Update the Network status with the allocated IP addresses
-	network.Status.AllocatableIPs = allocatableIPs
+	network.Status.FreeIPs = allocatableIPs
+	network.Status.AssignedIPs = []kettlev1alpha1.AllocatedIP{}
 
 	// Set the Initialized condition to True
-	r.updateCondition(network, metav1.Condition{
-		Type:               kettlev1alpha1.InitializedCondition,
-		Status:             metav1.ConditionTrue,
-		Reason:             "NetworkInitialized",
-		Message:            "Network has been initialized",
-		LastTransitionTime: metav1.Now(),
-	})
+	network.SetConditionInitialized(metav1.ConditionTrue)
+}
 
+// UpdateIPs updates the FreeIPs in the Network status
+func (r *NetworkReconciler) UpdateIPs(network *kettlev1alpha1.Network) bool {
+	r.logger.Info("Updating FreeIPs")
+	updated := false
+
+	// Create a map of assigned IPs for faster lookup
+	assignedIPMap := make(map[string]bool)
+	for _, assignedIP := range network.Status.AssignedIPs {
+		assignedIPMap[assignedIP.IP] = true
+	}
+
+	// Create a new list for FreeIPs, keeping only the IPs that are still available
+	var updatedFreeIPs []string
+	for _, freeIP := range network.Status.FreeIPs {
+		if !assignedIPMap[freeIP] {
+			updatedFreeIPs = append(updatedFreeIPs, freeIP)
+		} else {
+			updated = true
+		}
+	}
+
+	// If updates occurred, modify the network status but keep existing fields
+	if updated {
+		network.Status.FreeIPs = updatedFreeIPs
+
+		// Set a condition to indicate that the FreeIPs have been updated
+		network.SetConditionFreeIPsUpdated(metav1.ConditionTrue)
+	}
+
+	return updated
 }

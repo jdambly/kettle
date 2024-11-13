@@ -87,14 +87,8 @@ spec:
           status:
             description: NetworkStatus defines the observed state of Network
             properties:
-              allocatableIPs:
-                description: AllocatableIPs is the range of IPs that are available
-                  for allocation
-                items:
-                  type: string
-                type: array
-              allocatedIPs:
-                description: AllocatedIPs is the list of IPs that have been allocated
+              AssignedIPs:
+                description: AssignedIPs is the list of IPs that have been allocated
                 items:
                   description: AllocatedIP represents an allocated IP and its associated
                     Pod
@@ -185,6 +179,11 @@ spec:
                   - status
                   - type
                   type: object
+                type: array
+              freeIPs:
+                description: FreeIPs is the range of IPs that are available for allocation
+                items:
+                  type: string
                 type: array
             type: object
         type: object

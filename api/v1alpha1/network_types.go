@@ -28,7 +28,8 @@ import (
 )
 
 const (
-	InitializedCondition = "Initialized"
+	ConditionInitialized    = "Initialized"
+	ConditionFreeIPsUpdated = "FreeIPsUpdated"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -66,10 +67,10 @@ type AllocatedIP struct {
 
 // NetworkStatus defines the observed state of Network
 type NetworkStatus struct {
-	// AllocatableIPs is the range of IPs that are available for allocation
-	AllocatableIPs []string `json:"allocatableIPs,omitempty"`
-	// AllocatedIPs is the list of IPs that have been allocated
-	AllocatedIPs []AllocatedIP `json:"allocatedIPs,omitempty"`
+	// FreeIPs is the range of IPs that are available for allocation
+	FreeIPs []string `json:"freeIPs,omitempty"`
+	// AssignedIPs is the list of IPs that have been allocated
+	AssignedIPs []AllocatedIP `json:"AssignedIPs,omitempty"`
 	// Conditions represents the observations of the resource's state
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
@@ -100,6 +101,54 @@ type NetworkList struct {
 
 func init() {
 	SchemeBuilder.Register(&Network{}, &NetworkList{})
+}
+
+// UpdateCondition is a helper function to update the condition of the network making sure that the existing conditions
+// are not replaced or duplicated
+func (n *Network) UpdateCondition(newCondition metav1.Condition) {
+	updated := false
+	for i, condition := range n.Status.Conditions {
+		if condition.Type == newCondition.Type {
+			n.Status.Conditions[i] = newCondition
+			updated = true
+			break
+		}
+	}
+	if !updated {
+		n.Status.Conditions = append(n.Status.Conditions, newCondition)
+	}
+}
+
+// SetConditionInitialized checks is the initialized condition is present and sets it to the given status
+func (n *Network) SetConditionInitialized(status metav1.ConditionStatus) {
+	n.UpdateCondition(metav1.Condition{
+		Type:               ConditionInitialized,
+		Status:             status,
+		Reason:             "NetworkInitialized",
+		Message:            "Network has been initialized",
+		LastTransitionTime: metav1.Now(),
+	})
+}
+
+// SetConditionFreeIPsUpdated checks is the FreeIPsUpdated condition is present and sets it to the given status
+func (n *Network) SetConditionFreeIPsUpdated(status metav1.ConditionStatus) {
+	n.UpdateCondition(metav1.Condition{
+		Type:               ConditionFreeIPsUpdated,
+		Status:             status,
+		Reason:             "FreeIPsUpdated",
+		Message:            "FreeIPs have been updated",
+		LastTransitionTime: metav1.Now(),
+	})
+}
+
+// IsConditionPresentAndEqual checks if the condition is present and equal to the given status
+func (n *Network) IsConditionPresentAndEqual(conditionType string, status metav1.ConditionStatus) bool {
+	for _, condition := range n.Status.Conditions {
+		if condition.Type == conditionType && condition.Status == status {
+			return true
+		}
+	}
+	return false
 }
 
 // GetAllocatableIPs generates a list of allocatable IPs based on the given NetworkSpec.
@@ -133,7 +182,11 @@ func (n *Network) GetAllocatableIPs() ([]string, error) {
 			break
 		}
 		// Skip network, broadcast addresses, gateway, and exclude IPs
-		if ipStr != cidr.IP.String() && ipStr != n.Spec.Gateway && !contains(n.Spec.ExcludeIPs, ipStr) && inRange(ip, startIP, endIP) {
+		if ipStr != cidr.IP.String() &&
+			ipStr != n.Spec.Gateway &&
+			!contains(n.Spec.ExcludeIPs, ipStr) &&
+			inRange(ip, startIP, endIP) {
+
 			allocatableIPs = append(allocatableIPs, ipStr)
 		}
 	}
@@ -159,38 +212,36 @@ func (n *Network) GetRangeIPs() (net.IP, net.IP, error) {
 
 // ShouldReconcile checks if the Network should be reconciled based on the status of the given Network
 // and the current Network
-func (n *Network) ShouldReconcile(network *Network) bool {
+func (n *Network) ShouldReconcile(newNetwork *Network) bool {
 	logger := log.FromContext(context.Background()).WithCallDepth(3)
+	// check if the initialized condition is present in the old object, if the status is missing we
+	// want to ignore the event to remove dupoicate reconciliations
+	/*if !n.IsConditionPresentAndEqual(ConditionInitialized, metav1.ConditionTrue) {
+		logger.Info("Initialized condition is not present or not equal")
+		return false
+	}*/
 
-	if len(n.Status.AllocatedIPs) != len(network.Status.AllocatedIPs) {
+	if len(n.Status.AssignedIPs) != len(newNetwork.Status.AssignedIPs) {
 		logger.Info("Allocated IPs are not the same length")
-		return false
+		return true
 	}
-	if len(n.Status.AllocatableIPs) != len(network.Status.AllocatableIPs) {
-		logger.Info("Allocatable IPs are not the same length")
-		return false
-	}
-	for i := range n.Status.AllocatedIPs {
-		if n.Status.AllocatedIPs[i].IP != network.Status.AllocatedIPs[i].IP {
-			logger.Info("IPs are not equal " + n.Status.AllocatedIPs[i].IP + " " + network.Status.AllocatedIPs[i].IP)
-			return false
+
+	for i := range n.Status.AssignedIPs {
+		if n.Status.AssignedIPs[i].IP != newNetwork.Status.AssignedIPs[i].IP {
+			logger.Info("IPs are not equal " + n.Status.AssignedIPs[i].IP + " " + newNetwork.Status.AssignedIPs[i].IP)
+			return true
 		}
-		if n.Status.AllocatedIPs[i].PodName != network.Status.AllocatedIPs[i].PodName {
+		if n.Status.AssignedIPs[i].PodName != newNetwork.Status.AssignedIPs[i].PodName {
 			logger.Info("PodNames are not equal")
-			return false
+			return true
 		}
-		if n.Status.AllocatedIPs[i].PodUID != network.Status.AllocatedIPs[i].PodUID {
+		if n.Status.AssignedIPs[i].PodUID != newNetwork.Status.AssignedIPs[i].PodUID {
 			logger.Info("PodUIDs are not equal")
-			return false
+			return true
 		}
 	}
-	for i := range n.Status.AllocatableIPs {
-		if n.Status.AllocatableIPs[i] != network.Status.AllocatableIPs[i] {
-			logger.Info("Allocatable IPs are not equal")
-			return false
-		}
-	}
-	return true
+	logger.Info("Filtered event", "newNetwork", newNetwork.Name, "newNetwork", n.Name)
+	return false
 }
 
 // incrementIP increments the given IP address by 1

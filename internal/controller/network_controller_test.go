@@ -89,8 +89,28 @@ var _ = Describe("Network Controller", func() {
 			By("Checking that the resource has been initialized")
 			err = k8sClient.Get(ctx, typeNamespacedName, network)
 			Expect(err).NotTo(HaveOccurred())
-			initialized := controllerReconciler.isConditionPresentAndEqual(network, kettlev1alpha1.InitializedCondition, metav1.ConditionTrue)
-			Expect(initialized).To(BeTrue())
+
+			By("checking that status has been updated with the list of free ips")
+			Expect(network.Status.FreeIPs).To(ContainElement("10.0.0.10"))
+			Expect(network.Status.FreeIPs).To(ContainElement("10.0.0.20"))
+			Expect(len(network.Status.FreeIPs)).To(Equal(11))
+		})
+		It("should detect updates to the status fields and reconcile the resource", func() {
+			By("Reconciling the created resource")
+			controllerReconciler := &NetworkReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Checking that the resource has been initialized")
+			err = k8sClient.Get(ctx, typeNamespacedName, network)
+			Expect(err).NotTo(HaveOccurred())
+
 		})
 	})
 })

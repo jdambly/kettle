@@ -6,4 +6,8 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: network-sample
 spec:
-  # TODO(user): Add fields here
+  cidr: "10.10.0.0/24"
+  gateway: "10.10.0.1"
+  name: network-sample
+  ipRange: "10.10.0.10-10.10.0.20"
+
