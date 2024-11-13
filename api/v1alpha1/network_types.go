@@ -121,11 +121,21 @@ func (n *Network) UpdateCondition(newCondition metav1.Condition) {
 
 // SetConditionInitialized checks is the initialized condition is present and sets it to the given status
 func (n *Network) SetConditionInitialized(status metav1.ConditionStatus) {
+	var message string
+	var reason string
+	if status == metav1.ConditionTrue {
+		message = "Network has been initialized"
+		reason = "NetworkInitialized"
+	} else {
+		message = "Network has not been initialized"
+		reason = "NetworkNotInitialized"
+	}
+
 	n.UpdateCondition(metav1.Condition{
 		Type:               ConditionInitialized,
 		Status:             status,
-		Reason:             "NetworkInitialized",
-		Message:            "Network has been initialized",
+		Reason:             reason,
+		Message:            message,
 		LastTransitionTime: metav1.Now(),
 	})
 }
@@ -151,9 +161,9 @@ func (n *Network) IsConditionPresentAndEqual(conditionType string, status metav1
 	return false
 }
 
-// GetAllocatableIPs generates a list of allocatable IPs based on the given NetworkSpec.
-// This function does not update the Network status, allowing reconciliation logic to handle status updates.
-func (n *Network) GetAllocatableIPs() ([]string, error) {
+// GetIPs generates a list IPs based on the given NetworkSpec. It excludes the gateway, network, broadcast addresses,
+// and any IPs in the exclude list. It also filters IPs based on the IP range if provided.
+func (n *Network) GetIPs() ([]string, error) {
 	var allocatableIPs []string
 	if n.Spec.CIDR == "" {
 		return nil, errors.New("spec.cidr is required")
@@ -210,12 +220,14 @@ func (n *Network) GetRangeIPs() (net.IP, net.IP, error) {
 	return startIP, endIP, nil
 }
 
+// IPReconcile check all the AssignedIps are not present in the FreeIPs
+
 // ShouldReconcile checks if the Network should be reconciled based on the status of the given Network
 // and the current Network
 func (n *Network) ShouldReconcile(newNetwork *Network) bool {
 	logger := log.FromContext(context.Background()).WithCallDepth(3)
 	// check if the initialized condition is present in the old object, if the status is missing we
-	// want to ignore the event to remove dupoicate reconciliations
+	// want to ignore the event to remove duplicate reconciliations
 	/*if !n.IsConditionPresentAndEqual(ConditionInitialized, metav1.ConditionTrue) {
 		logger.Info("Initialized condition is not present or not equal")
 		return false

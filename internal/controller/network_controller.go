@@ -83,30 +83,10 @@ func (r *NetworkReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	return ctrl.Result{}, nil
 }
 
-// SetupWithManager sets up the controller with the Manager.
-func (r *NetworkReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.logger = log.FromContext(context.Background()).WithCallDepth(3)
-	// create a predicate to only trigger the controller when the status is updated with changes to allocated IPs
-	// this is to avoid unnecessary reconciliations
-	statusUpdatePredicate := predicate.Funcs{
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			oldObj := e.ObjectOld.(*kettlev1alpha1.Network)
-			newObj := e.ObjectNew.(*kettlev1alpha1.Network)
-			return oldObj.ShouldReconcile(newObj)
-		},
-	}
-	// predicate is used here to make sure the controller triggers when the status is updated
-	// it should also trigger on create/update/delete events
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&kettlev1alpha1.Network{}).
-		WithEventFilter(statusUpdatePredicate).
-		Complete(r)
-}
-
 // Initialize checks if the Network is initialized and if not allocates ip addresses and sets the Initialized condition
 func (r *NetworkReconciler) Initialize(network *kettlev1alpha1.Network) {
 	// Allocate IP addresses
-	allocatableIPs, err := network.GetAllocatableIPs()
+	allocatableIPs, err := network.GetIPs()
 	if err != nil {
 		r.logger.Error(err, "Failed to allocate IP addresses")
 		// set the Initialized condition to False
@@ -151,4 +131,24 @@ func (r *NetworkReconciler) UpdateIPs(network *kettlev1alpha1.Network) bool {
 	}
 
 	return updated
+}
+
+// SetupWithManager sets up the controller with the Manager.
+func (r *NetworkReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.logger = log.FromContext(context.Background()).WithCallDepth(3)
+	// create a predicate to only trigger the controller when the status is updated with changes to allocated IPs
+	// this is to avoid unnecessary reconciliations
+	statusUpdatePredicate := predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldObj := e.ObjectOld.(*kettlev1alpha1.Network)
+			newObj := e.ObjectNew.(*kettlev1alpha1.Network)
+			return oldObj.ShouldReconcile(newObj)
+		},
+	}
+	// predicate is used here to make sure the controller triggers when the status is updated
+	// it should also trigger on create/update/delete events
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&kettlev1alpha1.Network{}).
+		WithEventFilter(statusUpdatePredicate).
+		Complete(r)
 }

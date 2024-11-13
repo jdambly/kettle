@@ -7,7 +7,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-var _ = Describe("Network GetAllocatableIPs", func() {
+var _ = Describe("Network GetIPs", func() {
 	var (
 		network    *v1alpha1.Network
 		newNetwork *v1alpha1.Network
@@ -36,7 +36,7 @@ var _ = Describe("Network GetAllocatableIPs", func() {
 		})
 
 		It("should generate allocatable IPs based on the CIDR and apply exclusions", func() {
-			allocatableIPs, err := network.GetAllocatableIPs()
+			allocatableIPs, err := network.GetIPs()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(allocatableIPs).To(ContainElement("10.0.1.2"))
 			Expect(allocatableIPs).To(ContainElement("10.0.1.6"))
@@ -51,7 +51,7 @@ var _ = Describe("Network GetAllocatableIPs", func() {
 		})
 
 		It("should generate allocatable IPs based on the given range and apply exclusions", func() {
-			allocatableIPs, err := network.GetAllocatableIPs()
+			allocatableIPs, err := network.GetIPs()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(allocatableIPs).To(ContainElement("10.0.0.20"))
 			Expect(allocatableIPs).To(ContainElement("10.0.0.25"))
@@ -68,7 +68,7 @@ var _ = Describe("Network GetAllocatableIPs", func() {
 		})
 
 		It("should return an empty list of allocatable IPs", func() {
-			allocatableIPs, err := network.GetAllocatableIPs()
+			allocatableIPs, err := network.GetIPs()
 			Expect(err).To(HaveOccurred())
 			Expect(allocatableIPs).To(BeEmpty())
 		})
@@ -97,8 +97,8 @@ var _ = Describe("Network GetAllocatableIPs", func() {
 				{IP: "10.1.0.2", PodName: "test-pod1", PodUID: "1234"},
 				{IP: "10.1.0.3", PodName: "test-pod2", PodUID: "1235"},
 			}
-			allocatableIPs, err := network.GetAllocatableIPs()
-			newAllocatableIPs, newErr := newNetwork.GetAllocatableIPs()
+			allocatableIPs, err := network.GetIPs()
+			newAllocatableIPs, newErr := newNetwork.GetIPs()
 			network.Status.FreeIPs = allocatableIPs
 			newNetwork.Status.FreeIPs = newAllocatableIPs
 

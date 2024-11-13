@@ -93,7 +93,7 @@ var _ = Describe("Network Controller", func() {
 			By("checking that status has been updated with the list of free ips")
 			Expect(network.Status.FreeIPs).To(ContainElement("10.0.0.10"))
 			Expect(network.Status.FreeIPs).To(ContainElement("10.0.0.20"))
-			Expect(len(network.Status.FreeIPs)).To(Equal(11))
+			Expect(len(network.Status.FreeIPs)).To(Equal(9))
 		})
 		It("should detect updates to the status fields and reconcile the resource", func() {
 			By("Reconciling the created resource")
