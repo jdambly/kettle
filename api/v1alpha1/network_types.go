@@ -35,10 +35,33 @@ const (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Cluster
+// +kubebuilder:printcolumn:name="VLAN",type="integer",JSONPath=".spec.vlan",description="VLAN ID of the Network"
+// +kubebuilder:printcolumn:name="CIDR",type="string",JSONPath=".spec.cidr",description="CIDR of the Network"
+// +kubebuilder:printcolumn:name="Gateway",type="string",JSONPath=".spec.gateway",description="Gateway of the Network"
+
+// Network is the Schema for the networks API
+type Network struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   NetworkSpec   `json:"spec,omitempty"`
+	Status NetworkStatus `json:"status,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+
+// NetworkList contains a list of Network
+type NetworkList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []Network `json:"items"`
+}
+
 // NetworkSpec defines the desired state of Network
 type NetworkSpec struct {
-	// Name	the name of the network required
-	Name string `json:"name"`
 	// Vlan the vlan id of the network
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=4096
@@ -68,35 +91,11 @@ type AllocatedIP struct {
 // NetworkStatus defines the observed state of Network
 type NetworkStatus struct {
 	// FreeIPs is the range of IPs that are available for allocation
-	FreeIPs []string `json:"freeIPs,omitempty"`
+	FreeIPs []string `json:"freeIPs"`
 	// AssignedIPs is the list of IPs that have been allocated
-	AssignedIPs []AllocatedIP `json:"AssignedIPs,omitempty"`
+	AssignedIPs []AllocatedIP `json:"AssignedIPs"`
 	// Conditions represents the observations of the resource's state
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
-}
-
-// +kubebuilder:object:root=true
-// +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="VLAN",type="integer",JSONPath=".spec.vlan",description="VLAN ID of the Network"
-// +kubebuilder:printcolumn:name="CIDR",type="string",JSONPath=".spec.cidr",description="CIDR of the Network"
-// +kubebuilder:printcolumn:name="Gateway",type="string",JSONPath=".spec.gateway",description="Gateway of the Network"
-
-// Network is the Schema for the networks API
-type Network struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-
-	Spec   NetworkSpec   `json:"spec,omitempty"`
-	Status NetworkStatus `json:"status,omitempty"`
-}
-
-// +kubebuilder:object:root=true
-
-// NetworkList contains a list of Network
-type NetworkList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []Network `json:"items"`
 }
 
 func init() {
@@ -226,12 +225,6 @@ func (n *Network) GetRangeIPs() (net.IP, net.IP, error) {
 // and the current Network
 func (n *Network) ShouldReconcile(newNetwork *Network) bool {
 	logger := log.FromContext(context.Background()).WithCallDepth(3)
-	// check if the initialized condition is present in the old object, if the status is missing we
-	// want to ignore the event to remove duplicate reconciliations
-	/*if !n.IsConditionPresentAndEqual(ConditionInitialized, metav1.ConditionTrue) {
-		logger.Info("Initialized condition is not present or not equal")
-		return false
-	}*/
 
 	if len(n.Status.AssignedIPs) != len(newNetwork.Status.AssignedIPs) {
 		logger.Info("Allocated IPs are not the same length")

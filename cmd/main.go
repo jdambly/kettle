@@ -137,7 +137,7 @@ func main() {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
-
+	// () is used to instantiate the NetworkReconciler struct and then call the SetupWithManager method on the struct
 	if err = (&controller.NetworkReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),

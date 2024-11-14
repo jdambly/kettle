@@ -23,6 +23,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"reflect"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -45,7 +46,6 @@ type NetworkReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.18.4/pkg/reconcile
 func (r *NetworkReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	// Todo move this out of the reconcile function, I'm just not sure where to put it yet
 	r.logger.Info("Reconciling Network")
 
 	// Fetch the Network instance
@@ -53,31 +53,32 @@ func (r *NetworkReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	err := r.Get(ctx, req.NamespacedName, network)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			// Object not found, return. Created objects are automatically garbage collected
-			// this will trigger on a delete
-			// Todo: should we do some cleanup here?
 			r.logger.Info("Network resource not found. Ignoring since object must be deleted")
-			// this is considered a successful reconciliation
 			return ctrl.Result{}, nil
 		}
 		r.logger.Error(err, "Failed to get Network")
-		// return the error so that the controller can retry the failed request at the next notification
 		return ctrl.Result{}, err
 	}
 
-	// Initialize the Network
-	if network.IsConditionPresentAndEqual(kettlev1alpha1.ConditionInitialized, metav1.ConditionTrue) {
-		r.logger.Info("Network already initialized skipping...")
-	} else {
+	// Make a copy of the current status
+	originalStatus := network.Status.DeepCopy()
+
+	// Initialize the Network if needed
+	if !network.IsConditionPresentAndEqual(kettlev1alpha1.ConditionInitialized, metav1.ConditionTrue) {
 		r.logger.Info("Network not initialized, initializing...")
 		r.Initialize(network)
+	} else {
+		r.logger.Info("Network already initialized, skipping...")
 	}
 
-	// Update the status of the Network
-	err = r.Status().Update(ctx, network)
-	if err != nil {
-		r.logger.Error(err, "Failed to update Network status")
-		return ctrl.Result{}, err
+	// Compare the original status with the updated status
+	if !reflect.DeepEqual(originalStatus, &network.Status) {
+		r.logger.Info("Status has changed, updating...")
+		// Update the status of the resource
+		if err := r.Status().Update(ctx, network); err != nil {
+			r.logger.Error(err, "Failed to update Network status")
+			return ctrl.Result{}, err
+		}
 	}
 
 	return ctrl.Result{}, nil
@@ -95,42 +96,10 @@ func (r *NetworkReconciler) Initialize(network *kettlev1alpha1.Network) {
 
 	// Update the Network status with the allocated IP addresses
 	network.Status.FreeIPs = allocatableIPs
-	network.Status.AssignedIPs = []kettlev1alpha1.AllocatedIP{}
+	network.Status.AssignedIPs = make([]kettlev1alpha1.AllocatedIP, 0)
 
 	// Set the Initialized condition to True
 	network.SetConditionInitialized(metav1.ConditionTrue)
-}
-
-// UpdateIPs updates the FreeIPs in the Network status
-func (r *NetworkReconciler) UpdateIPs(network *kettlev1alpha1.Network) bool {
-	r.logger.Info("Updating FreeIPs")
-	updated := false
-
-	// Create a map of assigned IPs for faster lookup
-	assignedIPMap := make(map[string]bool)
-	for _, assignedIP := range network.Status.AssignedIPs {
-		assignedIPMap[assignedIP.IP] = true
-	}
-
-	// Create a new list for FreeIPs, keeping only the IPs that are still available
-	var updatedFreeIPs []string
-	for _, freeIP := range network.Status.FreeIPs {
-		if !assignedIPMap[freeIP] {
-			updatedFreeIPs = append(updatedFreeIPs, freeIP)
-		} else {
-			updated = true
-		}
-	}
-
-	// If updates occurred, modify the network status but keep existing fields
-	if updated {
-		network.Status.FreeIPs = updatedFreeIPs
-
-		// Set a condition to indicate that the FreeIPs have been updated
-		network.SetConditionFreeIPsUpdated(metav1.ConditionTrue)
-	}
-
-	return updated
 }
 
 // SetupWithManager sets up the controller with the Manager.

@@ -12,7 +12,7 @@ spec:
     listKind: NetworkList
     plural: networks
     singular: network
-  scope: Namespaced
+  scope: Cluster
   versions:
   - additionalPrinterColumns:
     - description: VLAN ID of the Network
@@ -67,9 +67,6 @@ spec:
               ipRange:
                 description: IPRange is the range of IPs that are available for allocation
                 type: string
-              name:
-                description: "Name\tthe name of the network required"
-                type: string
               nameServer:
                 description: NameServers the dns of the network
                 items:
@@ -81,8 +78,6 @@ spec:
                 maximum: 4096
                 minimum: 1
                 type: integer
-            required:
-            - name
             type: object
           status:
             description: NetworkStatus defines the observed state of Network
@@ -185,6 +180,9 @@ spec:
                 items:
                   type: string
                 type: array
+            required:
+            - AssignedIPs
+            - freeIPs
             type: object
         type: object
     served: true
