@@ -52,7 +52,6 @@ var _ = Describe("Network Controller", func() {
 						Namespace: "default",
 					},
 					Spec: kettlev1alpha1.NetworkSpec{
-						Name:        "test-network",
 						Vlan:        100,
 						CIDR:        "10.0.0.0/24",
 						Gateway:     "10.0.0.1",
