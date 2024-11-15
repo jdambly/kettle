@@ -51,7 +51,14 @@ var _ = Describe("Network Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: ipamv1alpha1.NetworkSpec{
+						Vlan:        100,
+						CIDR:        "10.0.0.0/24",
+						Gateway:     "10.0.0.1",
+						NameServers: nil,
+						IPRange:     "10.0.0.10-10.0.0.20",
+						ExcludeIPs:  []string{"10.0.0.11", "10.0.0.12"},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
@@ -77,8 +84,31 @@ var _ = Describe("Network Controller", func() {
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+			By("Checking that the resource has been initialized")
+			err = k8sClient.Get(ctx, typeNamespacedName, network)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("checking that status has been updated with the list of free ips")
+			Expect(network.Status.FreeIPs).To(ContainElement("10.0.0.10"))
+			Expect(network.Status.FreeIPs).To(ContainElement("10.0.0.20"))
+			Expect(len(network.Status.FreeIPs)).To(Equal(9))
+		})
+		It("should detect updates to the status fields and reconcile the resource", func() {
+			By("Reconciling the created resource")
+			controllerReconciler := &NetworkReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Checking that the resource has been initialized")
+			err = k8sClient.Get(ctx, typeNamespacedName, network)
+			Expect(err).NotTo(HaveOccurred())
+
 		})
 	})
 })
