@@ -64,6 +64,29 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 			return ctrl.Result{}, nil
 		}
 	}
+	// Get the value of the network annotation
+	netAnnotaionValue, ok := pod.GetAnnotations()[ipamv1alpha1.NetwotksAnnotation]
+	if !ok {
+		logger.Error(err, "failed to get network annotation")
+		return ctrl.Result{}, err
+	}
+	// create a client.ObjectKey for the network
+	netReq := client.ObjectKey{
+		Name:      netAnnotaionValue,
+		Namespace: "", // Network objects are not namespaced
+	}
+	network := &ipamv1alpha1.Network{}
+	err = r.Get(ctx, netReq, network)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			// Network not found, return. This can be ignored.
+			logger.Info("Network not found, ignoring", "network", netAnnotaionValue)
+			return ctrl.Result{}, nil
+		}
+		logger.Error(err, "failed to get network", "network", netAnnotaionValue)
+		return ctrl.Result{}, err
+	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -102,7 +125,7 @@ func deleteFilter(e event.DeleteEvent) bool {
 }
 
 // genericFilter if a helper function used for predicate.Funcs to determine if a pod should be reconciled. this func
-// returns false as it is not used
+// returns false to filter out all generic events
 func genericFilter(e event.GenericEvent) bool {
 	return false
 }

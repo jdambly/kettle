@@ -4,6 +4,7 @@ import (
 	"github.com/jdambly/kettle/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -121,6 +122,69 @@ var _ = Describe("Network GetIPs", func() {
 				{IP: "10.1.0.2", PodName: "test-pod3", PodUID: "1236"},
 			}
 			Expect(network.ShouldReconcile(newNetwork)).To(BeTrue())
+		})
+	})
+	Context("When allocating an IP to a pod", func() {
+		var pod *corev1.Pod
+
+		BeforeEach(func() {
+			pod = &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					UID:       "1234",
+				},
+			}
+			network.Status.FreeIPs = []string{"10.0.0.2", "10.0.0.3"}
+		})
+
+		It("should allocate the first free IP to the pod", func() {
+			err := network.Allocate(pod)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(network.Status.FreeIPs).ToNot(ContainElement("10.0.0.2"))
+			Expect(network.Status.AssignedIPs).To(ContainElement(v1alpha1.AllocatedIP{
+				IP:        "10.0.0.2",
+				PodName:   "test-pod",
+				Namespace: "default",
+				PodUID:    "1234",
+			}))
+		})
+
+		It("should return an error if no free IPs are available", func() {
+			network.Status.FreeIPs = []string{}
+			err := network.Allocate(pod)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(Equal("no free IPs available"))
+		})
+	})
+	Context("When deallocating an IP from a pod", func() {
+		var pod *corev1.Pod
+
+		BeforeEach(func() {
+			pod = &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					UID:       "1234",
+				},
+			}
+			network.Status.AssignedIPs = []v1alpha1.AllocatedIP{
+				{IP: "10.0.0.2", PodName: "test-pod", Namespace: "default", PodUID: "1234"},
+			}
+			network.Status.FreeIPs = []string{}
+		})
+
+		It("should deallocate the IP from the pod and add it back to the free IPs list", func() {
+			network.Deallocate(pod)
+			Expect(network.Status.AssignedIPs).To(BeEmpty())
+			Expect(network.Status.FreeIPs).To(ContainElement("10.0.0.2"))
+		})
+
+		It("should do nothing if the pod does not have an assigned IP", func() {
+			pod.UID = "5678"
+			network.Deallocate(pod)
+			Expect(network.Status.AssignedIPs).To(HaveLen(1))
+			Expect(network.Status.FreeIPs).To(BeEmpty())
 		})
 	})
 })

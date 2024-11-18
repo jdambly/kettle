@@ -88,7 +88,7 @@ spec:
           status:
             description: NetworkStatus defines the observed state of Network
             properties:
-              allocatedIPs:
+              AssignedIPs:
                 description: AllocatedIPs is the list of allocated IPs in the network
                 items:
                   description: AllocatedIP represents list of allocated IPs in the
@@ -192,6 +192,8 @@ spec:
                 items:
                   type: string
                 type: array
+            required:
+            - conditions
             type: object
         type: object
     served: true

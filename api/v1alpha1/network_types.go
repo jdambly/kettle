@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"net"
@@ -121,6 +122,54 @@ type NetworkList struct {
 
 func init() {
 	SchemeBuilder.Register(&Network{}, &NetworkList{})
+}
+
+// Allocate takes a pod as an argument then checks the list of free IPs if there are free IPs then it grabs the first one in the list removing it and
+// then updates status.freeIps, and status.assignedIps
+func (n *Network) Allocate(pod *corev1.Pod) error {
+	if len(n.Status.FreeIPs) == 0 {
+		return errors.New("no free IPs available")
+	}
+	// create a deep copy of the network status
+	newStatus := n.Status.DeepCopy()
+	// Get the first free IP
+	ip := newStatus.FreeIPs[0]
+	// Make a copy of the free IPs
+	newStatus.FreeIPs = newStatus.FreeIPs[1:]
+	// create a new allocated IP
+	allocatedIP := AllocatedIP{
+		IP:        ip,
+		PodName:   pod.Name,
+		Namespace: pod.Namespace,
+		PodUID:    pod.UID,
+	}
+	// Add the IP to the list of assigned IPs
+	newStatus.AssignedIPs = append(newStatus.AssignedIPs, allocatedIP)
+	// Update the status of the network
+	n.Status = *newStatus
+
+	return nil
+}
+
+// Deallocate takes a pod as an argument then checks the list of assigned IPs if the pod is assigned an IP then it removes it from the list
+// and adds it back to the free IPs list
+func (n *Network) Deallocate(pod *corev1.Pod) error {
+	// create a deep copy of the network status
+	newStatus := n.Status.DeepCopy()
+	// Loop through the assigned IPs
+	for i, ip := range newStatus.AssignedIPs {
+		// Check if the pod is assigned the IP
+		if ip.PodUID == pod.UID {
+			// Remove the IP from the list of assigned IPs
+			newStatus.AssignedIPs = append(newStatus.AssignedIPs[:i], newStatus.AssignedIPs[i+1:]...)
+			// Add the IP back to the list of free IPs
+			newStatus.FreeIPs = append(newStatus.FreeIPs, ip.IP)
+			// Update the status of the network
+			n.Status = *newStatus
+			return nil
+		}
+	}
+	return errors.New("Unable to deallocate IP in pod: " + pod.Name + " in namespace: " + pod.Namespace)
 }
 
 // UpdateCondition is a helper function to update the condition of the network making sure that the existing conditions
