@@ -54,7 +54,7 @@ type NetworkReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.17.3/pkg/reconcile
 func (r *NetworkReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	// todo (jdambly): invetigate how to enable the logging so it's initialized once not in every reconcile
+	// todo (jdambly): investigate how to enable the logging so it's initialized once not in every reconcile
 	logger := log.FromContext(ctx).WithCallDepth(3).WithValues("network", req.NamespacedName)
 
 	// Fetch the Network instance

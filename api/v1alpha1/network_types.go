@@ -30,6 +30,8 @@ import (
 const (
 	ConditionInitialized    = "Initialized"
 	ConditionFreeIPsUpdated = "FreeIPsUpdated"
+	NetwotksAnnotation      = "networking.kettle.io/networks"
+	StatusAnnotation        = "networking.kettle.io/status"
 )
 
 // NetworkSpec defines the desired state of Network

@@ -1,4 +1,5 @@
 ## Append samples of your project ##
 resources:
 - ipam_v1alpha1_network.yaml
+- core_v1_pod.yaml
 #+kubebuilder:scaffold:manifestskustomizesamples
