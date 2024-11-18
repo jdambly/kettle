@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 var _ = Describe("Pod Controller", func() {
@@ -62,7 +63,6 @@ var _ = Describe("Pod Controller", func() {
 			}
 		})
 		AfterEach(func() {
-			By("Running cleanup logic")
 			pod := &corev1.Pod{}
 			err := k8sClient.Get(ctx, typeNamespacedName, pod)
 			Expect(err).ToNot(HaveOccurred())
@@ -72,15 +72,16 @@ var _ = Describe("Pod Controller", func() {
 		})
 
 		It("should successfully reconcile the resource", func() {
-			// Arrange
-			// TODO: Initialize your controller and any required resources here.
+			By("reconciling the pod resource with our annotation")
+			podReconciler := &PodReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
 
-			// Act
-			// TODO: Call the reconcile function of your controller here.
-
-			// Assert
-			// TODO: Add assertions to verify the expected outcome.
-			Expect(true).To(BeTrue()) // Example assertion, replace with actual assertions.
+			_, err := podReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 })
