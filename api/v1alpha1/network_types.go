@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/json"
 	"net"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"strings"
@@ -125,10 +126,10 @@ func init() {
 }
 
 // Allocate takes a pod as an argument then checks the list of free IPs if there are free IPs then it grabs the first one in the list removing it and
-// then updates status.freeIps, and status.assignedIps
-func (n *Network) Allocate(pod *corev1.Pod) error {
+// then updates status.freeIps, and status.assignedIps returning the ip address if successful
+func (n *Network) Allocate(pod *corev1.Pod) (string, error) {
 	if len(n.Status.FreeIPs) == 0 {
-		return errors.New("no free IPs available")
+		return "", errors.New("no free IPs available")
 	}
 	// create a deep copy of the network status
 	newStatus := n.Status.DeepCopy()
@@ -148,7 +149,7 @@ func (n *Network) Allocate(pod *corev1.Pod) error {
 	// Update the status of the network
 	n.Status = *newStatus
 
-	return nil
+	return ip, nil
 }
 
 // Deallocate takes a pod as an argument then checks the list of assigned IPs if the pod is assigned an IP then it removes it from the list
@@ -170,6 +171,30 @@ func (n *Network) Deallocate(pod *corev1.Pod) error {
 		}
 	}
 	return errors.New("Unable to deallocate IP in pod: " + pod.Name + " in namespace: " + pod.Namespace)
+}
+
+// GetStatusAnnotation returns the status annotation for the network with all the network details as a string
+func (n *Network) GetStatusAnnotation(ip string) (string, error) {
+	// create a map of the network details
+	if n.Spec.NameServers == nil {
+		n.Spec.NameServers = []string{}
+	}
+
+	networkDetails := map[string]interface{}{
+		"VLAN":        n.Spec.Vlan,
+		"CIDR":        n.Spec.CIDR,
+		"Gateway":     n.Spec.Gateway,
+		"IP":          ip,
+		"nameServers": n.Spec.NameServers,
+	}
+
+	// convert map to JSON
+	jsonBytes, err := json.Marshal(networkDetails)
+	if err != nil {
+		return "", err
+	}
+	// convert the JSON bytes to a string
+	return string(jsonBytes), nil
 }
 
 // UpdateCondition is a helper function to update the condition of the network making sure that the existing conditions

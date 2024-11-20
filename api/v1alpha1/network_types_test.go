@@ -139,7 +139,7 @@ var _ = Describe("Network GetIPs", func() {
 		})
 
 		It("should allocate the first free IP to the pod", func() {
-			err := network.Allocate(pod)
+			_, err := network.Allocate(pod)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(network.Status.FreeIPs).ToNot(ContainElement("10.0.0.2"))
 			Expect(network.Status.AssignedIPs).To(ContainElement(v1alpha1.AllocatedIP{
@@ -152,7 +152,7 @@ var _ = Describe("Network GetIPs", func() {
 
 		It("should return an error if no free IPs are available", func() {
 			network.Status.FreeIPs = []string{}
-			err := network.Allocate(pod)
+			_, err := network.Allocate(pod)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(Equal("no free IPs available"))
 		})
