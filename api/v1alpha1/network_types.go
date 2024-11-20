@@ -61,6 +61,9 @@ type NetworkSpec struct {
 	// excludeIPs is the list of IPs to exclude from the IPRange
 	// +operator-sdk:csv:customresourcedefinitions:type=spec
 	ExcludeIPs []string `json:"excludeIPs,omitempty"`
+	// routes is the list of routes for the network
+	// +operator-sdk:csv:customresourcedefinitions:type=spec
+	Routes []string `json:"routes,omitempty"`
 }
 
 // AllocatedIP represents list of allocated IPs in the network and it's associated Pods
@@ -175,17 +178,19 @@ func (n *Network) Deallocate(pod *corev1.Pod) error {
 
 // GetStatusAnnotation returns the status annotation for the network with all the network details as a string
 func (n *Network) GetStatusAnnotation(ip string) (string, error) {
-	// create a map of the network details
 	if n.Spec.NameServers == nil {
 		n.Spec.NameServers = []string{}
 	}
-
+	if n.Spec.Routes == nil {
+		n.Spec.Routes = []string{}
+	}
 	networkDetails := map[string]interface{}{
 		"VLAN":        n.Spec.Vlan,
 		"CIDR":        n.Spec.CIDR,
 		"Gateway":     n.Spec.Gateway,
 		"IP":          ip,
 		"nameServers": n.Spec.NameServers,
+		"routes":      n.Spec.Routes,
 	}
 
 	// convert map to JSON

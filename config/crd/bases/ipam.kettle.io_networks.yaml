@@ -74,6 +74,11 @@ spec:
                 items:
                   type: string
                 type: array
+              routes:
+                description: routes is the list of routes for the network
+                items:
+                  type: string
+                type: array
               vlan:
                 description: vlan is the VLAN ID of the network
                 maximum: 4096
