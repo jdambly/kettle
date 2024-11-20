@@ -32,8 +32,14 @@ import (
 const (
 	ConditionInitialized    = "Initialized"
 	ConditionFreeIPsUpdated = "FreeIPsUpdated"
+	ConditionErrorNoFreeIPs = "ErrorNoFreeIPs"
 	NetwotksAnnotation      = "networking.kettle.io/networks"
 	StatusAnnotation        = "networking.kettle.io/status"
+)
+
+var (
+	ErrIPAlreadyAllocated = errors.New("IP already allocated for Pod")
+	ErrorNoIPsAvailable   = errors.New("no IP addresses available for allocation")
 )
 
 // NetworkSpec defines the desired state of Network
@@ -132,7 +138,13 @@ func init() {
 // then updates status.freeIps, and status.assignedIps returning the ip address if successful
 func (n *Network) Allocate(pod *corev1.Pod) (string, error) {
 	if len(n.Status.FreeIPs) == 0 {
-		return "", errors.New("no free IPs available")
+		return "", ErrorNoIPsAvailable
+	}
+	// check if the pod is already assigned an IP and raise an error if it is
+	for _, ip := range n.Status.AssignedIPs {
+		if ip.PodUID == pod.UID {
+			return ip.IP, ErrIPAlreadyAllocated
+		}
 	}
 	// create a deep copy of the network status
 	newStatus := n.Status.DeepCopy()
@@ -246,6 +258,17 @@ func (n *Network) SetConditionFreeIPsUpdated(status metav1.ConditionStatus) {
 		Status:             status,
 		Reason:             "FreeIPsUpdated",
 		Message:            "FreeIPs have been updated",
+		LastTransitionTime: metav1.Now(),
+	})
+}
+
+// SetConditionErrorNoFreeIPs checks is the ErrorNoFreeIPs condition is present and sets it to the given status
+func (n *Network) SetConditionErrorNoFreeIPs(status metav1.ConditionStatus) {
+	n.UpdateCondition(metav1.Condition{
+		Type:               ConditionErrorNoFreeIPs,
+		Status:             status,
+		Reason:             "NoFreeIPs",
+		Message:            "No free IPs available",
 		LastTransitionTime: metav1.Now(),
 	})
 }

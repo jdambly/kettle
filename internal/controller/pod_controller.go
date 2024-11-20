@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	ipamv1alpha1 "github.com/jdambly/kettle/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -107,9 +108,12 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	}
 	// allocate the ip address to the pod
 	ip, err := network.Allocate(pod)
-	if err != nil {
-		logger.Error(err, "failed to allocate ip address to pod")
-		return ctrl.Result{}, err
+	if errors.Is(err, ipamv1alpha1.ErrorNoIPsAvailable) {
+		// No allocatable IPs, request a requeue
+		// todo: try to garbage collect first
+		logger.Error(err, "network", netAnnotaionValue)
+		network.SetConditionFreeIPsUpdated(metav1.ConditionTrue)
+		return ctrl.Result{Requeue: false}, nil
 	}
 	logger.Info("Allocated IP address to pod", "ip", ip)
 	// update the network status

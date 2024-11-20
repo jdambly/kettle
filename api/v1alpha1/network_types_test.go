@@ -154,7 +154,15 @@ var _ = Describe("Network GetIPs", func() {
 			network.Status.FreeIPs = []string{}
 			_, err := network.Allocate(pod)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(Equal("no free IPs available"))
+			Expect(err.Error()).To(Equal(v1alpha1.ErrorNoIPsAvailable.Error()))
+		})
+		It("should return an error if is the ip is already allocated", func() {
+			network.Status.AssignedIPs = []v1alpha1.AllocatedIP{
+				{IP: "10.0.0.2", PodName: "test-pod", Namespace: "default", PodUID: "1234"},
+			}
+			_, err := network.Allocate(pod)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(Equal(v1alpha1.ErrIPAlreadyAllocated.Error()))
 		})
 	})
 	Context("When deallocating an IP from a pod", func() {
