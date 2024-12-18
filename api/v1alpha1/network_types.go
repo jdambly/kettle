@@ -20,11 +20,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/json"
 	"net"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"strings"
 )
@@ -80,11 +80,10 @@ type AllocatedIP struct {
 	PodName string `json:"podName"`
 	// Namespace is the namespace of the pod
 	Namespace string `json:"namespace"`
-	// PodUID is the UID of the pod
-	PodUID types.UID `json:"podUID"`
 	// ifName is the name of the assigned interface
 	IfName string `json:"ifName"`
 }
+type AllocatedIPMap map[types.NamespacedName]AllocatedIP
 
 // NetworkStatus defines the observed state of Network
 type NetworkStatus struct {
@@ -99,7 +98,7 @@ type NetworkStatus struct {
 	FreeIPs []string `json:"freeIPs,omitempty" protobuf:"bytes,1,rep,name=freeIPs"`
 	// AllocatedIPs is the list of allocated IPs in the network
 	// +operator-sdk:csv:customresourcedefinitions:type=status
-	AssignedIPs []AllocatedIP `json:"AssignedIPs,omitempty"  patchStrategy:"merge" patchMergeKey:"podUID" protobuf:"bytes,2,rep,name=AssignedIPs"`
+	AssignedIPs AllocatedIPMap `json:"AssignedIPs,omitempty"  patchStrategy:"merge" patchMergeKey:"podUID" protobuf:"bytes,2,rep,name=AssignedIPs"`
 	// Conditions is the list of conditions for the network
 	// +operator-sdk:csv:customresourcedefinitions:type=status
 	Conditions []metav1.Condition `json:"conditions" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,3,rep,name=conditions"`
@@ -136,13 +135,13 @@ func init() {
 
 // Allocate takes a pod as an argument then checks the list of free IPs if there are free IPs then it grabs the first one in the list removing it and
 // then updates status.freeIps, and status.assignedIps returning the ip address if successful
-func (n *Network) Allocate(pod *corev1.Pod) (string, error) {
+func (n *Network) Allocate(req ctrl.Request) (string, error) {
 	if len(n.Status.FreeIPs) == 0 {
 		return "", ErrorNoIPsAvailable
 	}
 	// check if the pod is already assigned an IP and raise an error if it is
-	for _, ip := range n.Status.AssignedIPs {
-		if ip.PodUID == pod.UID {
+	for namesapcedName, ip := range n.Status.AssignedIPs {
+		if namesapcedName == req.NamespacedName {
 			return ip.IP, ErrIPAlreadyAllocated
 		}
 	}
@@ -155,13 +154,14 @@ func (n *Network) Allocate(pod *corev1.Pod) (string, error) {
 	// create a new allocated IP
 	allocatedIP := AllocatedIP{
 		IP:        ip,
-		PodName:   pod.Name,
-		Namespace: pod.Namespace,
-		PodUID:    pod.UID,
+		PodName:   req.Name,
+		Namespace: req.Namespace,
 	}
 	// Add the IP to the list of assigned IPs
-	newStatus.AssignedIPs = append(newStatus.AssignedIPs, allocatedIP)
-	// Update the status of the network
+	if newStatus.AssignedIPs == nil {
+		newStatus.AssignedIPs = make(AllocatedIPMap)
+	}
+	newStatus.AssignedIPs[req.NamespacedName] = allocatedIP // Update the status of the network
 	n.Status = *newStatus
 
 	return ip, nil
@@ -169,23 +169,30 @@ func (n *Network) Allocate(pod *corev1.Pod) (string, error) {
 
 // Deallocate takes a pod as an argument then checks the list of assigned IPs if the pod is assigned an IP then it removes it from the list
 // and adds it back to the free IPs list
-func (n *Network) Deallocate(pod *corev1.Pod) error {
+func (n *Network) Deallocate(req ctrl.Request) error {
+	// Todo: Should this be an error? I think there are some cases where it should and some where it shouldn't
+	// 	- If the pod is not found, it should not be an error
+	// 	- If the pod is found but does not have an IP, it should not be an error
+	// 	- If the pod is found and has an IP, it should not be an error
+	// 	- If the pod is found and has an IP but the IP is not in the assigned list, it should be an error
+	logger := log.FromContext(context.Background()).WithCallDepth(0).WithValues("pod", req.Name, "namespace", req.Namespace)
+	logger.Info("Deallocating IP for pod")
 	// create a deep copy of the network status
 	newStatus := n.Status.DeepCopy()
 	// Loop through the assigned IPs
-	for i, ip := range newStatus.AssignedIPs {
-		// Check if the pod is assigned the IP
-		if ip.PodUID == pod.UID {
+	for namespacedName, ip := range newStatus.AssignedIPs {
+		if namespacedName == req.NamespacedName {
+			logger.Info("Checking if the pod is assigned the IP", "status.namespacedName", namespacedName, "pod", req.Name, "status.ip", ip.IP)
 			// Remove the IP from the list of assigned IPs
-			newStatus.AssignedIPs = append(newStatus.AssignedIPs[:i], newStatus.AssignedIPs[i+1:]...)
-			// Add the IP back to the list of free IPs
+			delete(newStatus.AssignedIPs, namespacedName)
+			// insert the IP back to the free IPs list
 			newStatus.FreeIPs = append(newStatus.FreeIPs, ip.IP)
 			// Update the status of the network
 			n.Status = *newStatus
 			return nil
 		}
 	}
-	return errors.New("Unable to deallocate IP in pod: " + pod.Name + " in namespace: " + pod.Namespace)
+	return errors.New("Unable to deallocate IP in pod: " + req.Name + " in namespace: " + req.Namespace)
 }
 
 // GetStatusAnnotation returns the status annotation for the network with all the network details as a string
@@ -347,6 +354,7 @@ func (n *Network) GetRangeIPs() (net.IP, net.IP, error) {
 // ShouldReconcile checks if the Network should be reconciled based on the status of the given Network
 // and the current Network
 func (n *Network) ShouldReconcile(newNetwork *Network) bool {
+	// Todo this needs it's own unit tests
 	logger := log.FromContext(context.Background()).WithCallDepth(3)
 
 	if len(n.Status.AssignedIPs) != len(newNetwork.Status.AssignedIPs) {
@@ -354,21 +362,18 @@ func (n *Network) ShouldReconcile(newNetwork *Network) bool {
 		return true
 	}
 
-	for i := range n.Status.AssignedIPs {
-		if n.Status.AssignedIPs[i].IP != newNetwork.Status.AssignedIPs[i].IP {
-			logger.Info("IPs are not equal " + n.Status.AssignedIPs[i].IP + " " + newNetwork.Status.AssignedIPs[i].IP)
+	for namespacedName, assignedIP := range n.Status.AssignedIPs {
+		newAssignedIP, exists := newNetwork.Status.AssignedIPs[namespacedName]
+		if !exists || assignedIP.IP != newAssignedIP.IP {
+			logger.Info("IPs are not equal", "oldIP", assignedIP.IP, "newIP", newAssignedIP.IP)
 			return true
 		}
-		if n.Status.AssignedIPs[i].PodName != newNetwork.Status.AssignedIPs[i].PodName {
-			logger.Info("PodNames are not equal")
-			return true
-		}
-		if n.Status.AssignedIPs[i].PodUID != newNetwork.Status.AssignedIPs[i].PodUID {
-			logger.Info("PodUIDs are not equal")
+		if assignedIP.PodName != newAssignedIP.PodName && assignedIP.Namespace != newAssignedIP.Namespace {
+			logger.Info("PodNames are not equal", "oldPodName", assignedIP.PodName, "newPodName", newAssignedIP.PodName)
 			return true
 		}
 	}
-	logger.Info("Filtered event", "newNetwork", newNetwork.Name, "newNetwork", n.Name)
+	logger.Info("Filtered event", "newNetwork", newNetwork.Name, "currentNetwork", n.Name)
 	return false
 }
 

@@ -90,13 +90,14 @@ var _ = Describe("Network GetIPs", func() {
 
 	Context("When assigned ip has been detected", func() {
 		BeforeEach(func() {
-			network.Status.AssignedIPs = []v1alpha1.AllocatedIP{
-				{IP: "10.1.0.2", PodName: "test-pod1", PodUID: "1234"},
-				{IP: "10.1.0.3", PodName: "test-pod2", PodUID: "1235"},
+			// todo this needs to updated now that the assigned ips are a map
+			network.Status.AssignedIPs = v1alpha1.AllocatedIPMap{
+				"1234": {IP: "10.1.0.2", PodName: "test-pod1"},
+				"1235": {IP: "10.1.0.3", PodName: "test-pod2"},
 			}
-			newNetwork.Status.AssignedIPs = []v1alpha1.AllocatedIP{
-				{IP: "10.1.0.2", PodName: "test-pod1", PodUID: "1234"},
-				{IP: "10.1.0.3", PodName: "test-pod2", PodUID: "1235"},
+			newNetwork.Status.AssignedIPs = v1alpha1.AllocatedIPMap{
+				"1234": {IP: "10.1.0.2", PodName: "test-pod1"},
+				"1235": {IP: "10.1.0.3", PodName: "test-pod2"},
 			}
 			allocatableIPs, err := network.GetIPs()
 			newAllocatableIPs, newErr := newNetwork.GetIPs()
@@ -112,14 +113,14 @@ var _ = Describe("Network GetIPs", func() {
 			Expect(network.ShouldReconcile(newNetwork)).To(BeFalse())
 		})
 		It("Returns true when the status are not Equal", func() {
-			newNetwork.Status.AssignedIPs = []v1alpha1.AllocatedIP{
-				{IP: "10.1.0.2", PodName: "test-pod3", PodUID: "1236"},
+			newNetwork.Status.AssignedIPs = v1alpha1.AllocatedIPMap{
+				"123456": {IP: "10.1.0.2", PodName: "test-pod3"},
 			}
 			Expect(network.ShouldReconcile(newNetwork)).To(BeTrue())
 		})
 		It("Return true when there is duplicate ips", func() {
-			newNetwork.Status.AssignedIPs = []v1alpha1.AllocatedIP{
-				{IP: "10.1.0.2", PodName: "test-pod3", PodUID: "1236"},
+			newNetwork.Status.AssignedIPs = v1alpha1.AllocatedIPMap{
+				"123456": {IP: "10.1.0.2", PodName: "test-pod3"},
 			}
 			Expect(network.ShouldReconcile(newNetwork)).To(BeTrue())
 		})
@@ -157,8 +158,8 @@ var _ = Describe("Network GetIPs", func() {
 			Expect(err.Error()).To(Equal(v1alpha1.ErrorNoIPsAvailable.Error()))
 		})
 		It("should return an error if is the ip is already allocated", func() {
-			network.Status.AssignedIPs = []v1alpha1.AllocatedIP{
-				{IP: "10.0.0.2", PodName: "test-pod", Namespace: "default", PodUID: "1234"},
+			network.Status.AssignedIPs = v1alpha1.AllocatedIPMap{
+				"1234": {IP: "10.0.0.2", PodName: "test-pod"},
 			}
 			_, err := network.Allocate(pod)
 			Expect(err).To(HaveOccurred())
@@ -176,21 +177,23 @@ var _ = Describe("Network GetIPs", func() {
 					UID:       "1234",
 				},
 			}
-			network.Status.AssignedIPs = []v1alpha1.AllocatedIP{
-				{IP: "10.0.0.2", PodName: "test-pod", Namespace: "default", PodUID: "1234"},
+			network.Status.AssignedIPs = v1alpha1.AllocatedIPMap{
+				"1234": {IP: "10.0.0.2", PodName: "test-pod"},
 			}
 			network.Status.FreeIPs = []string{}
 		})
 
 		It("should deallocate the IP from the pod and add it back to the free IPs list", func() {
-			network.Deallocate(pod)
+			err := network.Deallocate(pod)
+			Expect(err).ToNot(HaveOccurred())
 			Expect(network.Status.AssignedIPs).To(BeEmpty())
 			Expect(network.Status.FreeIPs).To(ContainElement("10.0.0.2"))
 		})
 
 		It("should do nothing if the pod does not have an assigned IP", func() {
 			pod.UID = "5678"
-			network.Deallocate(pod)
+			err := network.Deallocate(pod)
+			Expect(err).To(HaveOccurred())
 			Expect(network.Status.AssignedIPs).To(HaveLen(1))
 			Expect(network.Status.FreeIPs).To(BeEmpty())
 		})

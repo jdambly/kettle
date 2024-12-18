@@ -53,20 +53,24 @@ type PodReconciler struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.17.3/pkg/reconcile
 func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithCallDepth(0).WithValues("pod", req.NamespacedName)
-	// todo just logging now for testing purposes to make sure the predicate funcs are working
-	logger.Info("Reconciling Pod")
+	logger.Info("Reconciling Pod", "namespace", req.Namespace, "name", req.Name)
 	pod := &corev1.Pod{}
 	// to properly garbage collect the ip address we need to get the pod and the errors needs to persist into the code
 	// to make sure it's handled properly, we don't want to ignore the error or have the garbage collection fail silently
 	// if another error occurs
 	errPod := r.Get(ctx, req.NamespacedName, pod)
+	logger.Info("Got pod", "pod", pod, "UID", pod.UID, "error", errPod)
 	// Get the value of the network annotation
 	netAnnotaionValue, ok := pod.GetAnnotations()[ipamv1alpha1.NetwotksAnnotation]
 	if !ok {
+		// Todo: fix this error message "Operation cannot be fulfilled on pods \"busybox-pod\": the object has been modified; please apply your changes to the latest version and try again"
 		logger.Error(errPod, "failed to get network annotation", "annotation", netAnnotaionValue)
-		// Todo: some cleanup logic is needed here there could be a case were the network annotation is removed and we missed the update
+		// Todo: some cleanup logic is needed here there could be a case were the network annotation is removed and we missed the update, check if there is a status entry for this pod and remove it
 		return ctrl.Result{}, errPod
 	}
+	// create a deep copy of the pod to avoid modifying the original object
+	updatedPod := pod.DeepCopy()
+
 	// create a client.ObjectKey for the network
 	netReq := client.ObjectKey{
 		Name:      netAnnotaionValue,
@@ -90,16 +94,20 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		logger.Info("Network is not ready", "network", netAnnotaionValue)
 		return ctrl.Result{Requeue: true}, nil
 	}
-
+	// create a deep copy of the network to avoid modifying the original object
+	udpatedNetwork := network.DeepCopy()
 	if errPod != nil {
 		if apierrors.IsNotFound(errPod) {
 			// Object not found, return.  Created objects are automatically garbage collected, we need to garbage collect
-			// the ip addresses
-			// and updating the network status
-			network.Deallocate(pod)
+			// the ip addresses and update the network status
+			_ = udpatedNetwork.Deallocate(pod)
 			// update the status of the network
-			err := r.Status().Update(ctx, network)
+			err := r.Status().Patch(ctx, udpatedNetwork, client.MergeFrom(network))
 			if err != nil {
+				if apierrors.IsConflict(err) {
+					logger.Info("Conflict while updating network, retrying", "error", err, "network", udpatedNetwork.Name)
+					return ctrl.Result{Requeue: true}, nil
+				}
 				logger.Error(err, "failed to update network status")
 				return ctrl.Result{}, err
 			}
@@ -117,8 +125,12 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	}
 	logger.Info("Allocated IP address to pod", "ip", ip)
 	// update the network status
-	err = r.Status().Update(ctx, network)
+	err = r.Status().Patch(ctx, udpatedNetwork, client.MergeFrom(network))
 	if err != nil {
+		if apierrors.IsConflict(err) {
+			logger.Info("Conflict while updating network, retrying", "error", err, "network", udpatedNetwork.Name)
+			return ctrl.Result{Requeue: true}, nil
+		}
 		logger.Error(err, "failed to update network status")
 		return ctrl.Result{}, err
 	}
@@ -138,12 +150,17 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		podAnnotations[k] = v
 
 	}
-	pod.SetAnnotations(podAnnotations)
-	err = r.Update(ctx, pod)
-	if err != nil {
-		logger.Error(err, "failed to update pod with network annotation")
+	updatedPod.SetAnnotations(podAnnotations)
+	// Apply a patch using the MergeFrom helper function
+	if err := r.Patch(ctx, updatedPod, client.MergeFrom(pod)); err != nil {
+		if apierrors.IsConflict(err) {
+			logger.Info("Conflict while updating pod, retrying", "error", err, "pod", updatedPod.Name, "namespace", updatedPod.Namespace)
+			return ctrl.Result{Requeue: true}, nil
+		}
+		logger.Error(err, "failed to update pod with network annotation", "annotation", statusAnnotation, "pod", updatedPod.Name, "namespace", updatedPod.Namespace)
 		return ctrl.Result{}, err
 	}
+
 	logger.Info("Patched pod with network annotation", "annotation", statusAnnotation)
 	return ctrl.Result{}, nil
 }
@@ -194,10 +211,10 @@ func createFilter(e event.CreateEvent) bool {
 // will only return true if the pod has the annotations for network or status
 func deleteFilter(e event.DeleteEvent) bool {
 	logger := log.FromContext(context.Background()).WithCallDepth(3).WithValues("pod", e.Object.GetName(), "namespace", e.Object.GetNamespace())
-	logger.Info("Delete event")
+	logger.Info("Delete event", "pod", e.Object.GetName(), "namespace", e.Object.GetNamespace())
 	_, hasNetAnnotation := e.Object.GetAnnotations()[ipamv1alpha1.NetwotksAnnotation]
 	_, hasStatusAnnotation := e.Object.GetAnnotations()[ipamv1alpha1.StatusAnnotation]
-
+	logger.Info("Delete event", "hasNetAnnotation", hasNetAnnotation, "hasStatusAnnotation", hasStatusAnnotation, "pod", e.Object.GetName(), "namespace", e.Object.GetNamespace())
 	return hasStatusAnnotation || hasNetAnnotation
 }
 

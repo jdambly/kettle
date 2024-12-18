@@ -39,7 +39,7 @@ var _ = Describe("Pod Controller", func() {
 		}
 		pod := &corev1.Pod{}
 		BeforeEach(func() {
-			By("creating a pod resource")
+			By("creating a pod resource and a network resource")
 			err := k8sClient.Get(ctx, typeNamespacedName, pod)
 			if err != nil && errors.IsNotFound(err) {
 				resource := &corev1.Pod{

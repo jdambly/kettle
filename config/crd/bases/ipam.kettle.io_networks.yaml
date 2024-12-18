@@ -94,8 +94,7 @@ spec:
             description: NetworkStatus defines the observed state of Network
             properties:
               AssignedIPs:
-                description: AllocatedIPs is the list of allocated IPs in the network
-                items:
+                additionalProperties:
                   description: AllocatedIP represents list of allocated IPs in the
                     network and it's associated Pods
                   properties:
@@ -121,7 +120,8 @@ spec:
                   - podName
                   - podUID
                   type: object
-                type: array
+                description: AllocatedIPs is the list of allocated IPs in the network
+                type: object
               conditions:
                 description: Conditions is the list of conditions for the network
                 items:
