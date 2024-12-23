@@ -92,25 +92,13 @@ var _ = Describe("Network GetIPs", func() {
 	Context("When assigned ip has been detected", func() {
 		BeforeEach(func() {
 			// todo this needs to updated now that the assigned ips are a map
-			network.Status.AssignedIPs = v1alpha1.AllocatedIPMap{
-				types.NamespacedName{
-					Namespace: "default",
-					Name:      "test-pod1",
-				}: {IP: "10.1.0.2", PodName: "test-pod1"},
-				types.NamespacedName{
-					Namespace: "default",
-					Name:      "test-pod2",
-				}: {IP: "10.1.0.3", PodName: "test-pod2"},
+			network.Status.AssignedIPs = v1alpha1.AllocatedIPkey{
+				"default/test-pod1": {IP: "10.1.0.2", PodName: "test-pod1"},
+				"default/test-pod2": {IP: "10.1.0.3", PodName: "test-pod2"},
 			}
-			newNetwork.Status.AssignedIPs = v1alpha1.AllocatedIPMap{
-				types.NamespacedName{
-					Namespace: "default",
-					Name:      "test-pod1",
-				}: {IP: "10.1.0.2", PodName: "test-pod1"},
-				types.NamespacedName{
-					Namespace: "default",
-					Name:      "test-pod2",
-				}: {IP: "10.1.0.3", PodName: "test-pod2"},
+			newNetwork.Status.AssignedIPs = v1alpha1.AllocatedIPkey{
+				"default/test-pod1": {IP: "10.1.0.2", PodName: "test-pod1"},
+				"default/test-pod2": {IP: "10.1.0.3", PodName: "test-pod2"},
 			}
 			allocatableIPs, err := network.GetIPs()
 			newAllocatableIPs, newErr := newNetwork.GetIPs()
@@ -126,20 +114,14 @@ var _ = Describe("Network GetIPs", func() {
 			Expect(network.ShouldReconcile(newNetwork)).To(BeFalse())
 		})
 		It("Returns true when the status are not Equal", func() {
-			newNetwork.Status.AssignedIPs = v1alpha1.AllocatedIPMap{
-				types.NamespacedName{
-					Namespace: "default",
-					Name:      "test-pod3",
-				}: {IP: "10.1.0.2", PodName: "test-pod3"},
+			newNetwork.Status.AssignedIPs = v1alpha1.AllocatedIPkey{
+				"default/test-pod3": {IP: "10.1.0.2", PodName: "test-pod3"},
 			}
 			Expect(network.ShouldReconcile(newNetwork)).To(BeTrue())
 		})
 		It("Return true when there is duplicate ips", func() {
-			newNetwork.Status.AssignedIPs = v1alpha1.AllocatedIPMap{
-				types.NamespacedName{
-					Namespace: "default",
-					Name:      "test-pod3",
-				}: {IP: "10.1.0.2", PodName: "test-pod3"},
+			newNetwork.Status.AssignedIPs = v1alpha1.AllocatedIPkey{
+				"default/test-pod3": {IP: "10.1.0.2", PodName: "test-pod3"},
 			}
 			Expect(network.ShouldReconcile(newNetwork)).To(BeTrue())
 		})
@@ -163,7 +145,7 @@ var _ = Describe("Network GetIPs", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(network.Status.FreeIPs).ToNot(ContainElement("10.0.0.2"))
 			Expect(network.Status.AssignedIPs).To(HaveKeyWithValue(
-				types.NamespacedName{Namespace: "default", Name: "test-pod"},
+				"default/test-pod",
 				v1alpha1.AllocatedIP{IP: "10.0.0.2", PodName: "test-pod", Namespace: "default"},
 			))
 		})
@@ -175,11 +157,8 @@ var _ = Describe("Network GetIPs", func() {
 			Expect(err.Error()).To(Equal(v1alpha1.ErrorNoIPsAvailable.Error()))
 		})
 		It("should return an error if is the ip is already allocated", func() {
-			network.Status.AssignedIPs = v1alpha1.AllocatedIPMap{
-				types.NamespacedName{
-					Namespace: "default",
-					Name:      "test-pod",
-				}: {IP: "10.0.0.2", PodName: "test-pod"},
+			network.Status.AssignedIPs = v1alpha1.AllocatedIPkey{
+				"default/test-pod": {IP: "10.0.0.2", PodName: "test-pod"},
 			}
 			_, err := network.Allocate(req)
 			Expect(err).To(HaveOccurred())
@@ -195,11 +174,8 @@ var _ = Describe("Network GetIPs", func() {
 					Name:      "test-pod",
 				},
 			}
-			network.Status.AssignedIPs = v1alpha1.AllocatedIPMap{
-				types.NamespacedName{
-					Namespace: "default",
-					Name:      "test-pod",
-				}: {IP: "10.0.0.2", PodName: "test-pod"},
+			network.Status.AssignedIPs = v1alpha1.AllocatedIPkey{
+				"default/test-pod": {IP: "10.0.0.2", PodName: "test-pod"},
 			}
 			network.Status.FreeIPs = []string{}
 		})

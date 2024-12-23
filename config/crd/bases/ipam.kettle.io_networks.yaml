@@ -110,15 +110,11 @@ spec:
                     podName:
                       description: Name is the name of the pod
                       type: string
-                    podUID:
-                      description: PodUID is the UID of the pod
-                      type: string
                   required:
                   - ifName
                   - ip
                   - namespace
                   - podName
-                  - podUID
                   type: object
                 description: AllocatedIPs is the list of allocated IPs in the network
                 type: object

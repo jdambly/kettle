@@ -100,7 +100,7 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		if apierrors.IsNotFound(errPod) {
 			// Object not found, return.  Created objects are automatically garbage collected, we need to garbage collect
 			// the ip addresses and update the network status
-			_ = udpatedNetwork.Deallocate(pod)
+			_ = udpatedNetwork.Deallocate(req)
 			// update the status of the network
 			err := r.Status().Patch(ctx, udpatedNetwork, client.MergeFrom(network))
 			if err != nil {
@@ -115,7 +115,7 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		}
 	}
 	// allocate the ip address to the pod
-	ip, err := network.Allocate(pod)
+	ip, err := network.Allocate(req)
 	if errors.Is(err, ipamv1alpha1.ErrorNoIPsAvailable) {
 		// No allocatable IPs, request a requeue
 		// todo: try to garbage collect first

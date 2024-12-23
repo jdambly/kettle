@@ -20,8 +20,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/jdambly/kettle/pkg/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/json"
 	"net"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -83,7 +83,7 @@ type AllocatedIP struct {
 	// ifName is the name of the assigned interface
 	IfName string `json:"ifName"`
 }
-type AllocatedIPMap map[types.NamespacedName]AllocatedIP
+type AllocatedIPkey map[string]AllocatedIP
 
 // NetworkStatus defines the observed state of Network
 type NetworkStatus struct {
@@ -98,7 +98,7 @@ type NetworkStatus struct {
 	FreeIPs []string `json:"freeIPs,omitempty" protobuf:"bytes,1,rep,name=freeIPs"`
 	// AllocatedIPs is the list of allocated IPs in the network
 	// +operator-sdk:csv:customresourcedefinitions:type=status
-	AssignedIPs AllocatedIPMap `json:"AssignedIPs,omitempty"  patchStrategy:"merge" patchMergeKey:"podUID" protobuf:"bytes,2,rep,name=AssignedIPs"`
+	AssignedIPs AllocatedIPkey `json:"AssignedIPs,omitempty"  patchStrategy:"merge" patchMergeKey:"podUID" protobuf:"bytes,2,rep,name=AssignedIPs"`
 	// Conditions is the list of conditions for the network
 	// +operator-sdk:csv:customresourcedefinitions:type=status
 	Conditions []metav1.Condition `json:"conditions" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,3,rep,name=conditions"`
@@ -136,12 +136,14 @@ func init() {
 // Allocate takes a pod as an argument then checks the list of free IPs if there are free IPs then it grabs the first one in the list removing it and
 // then updates status.freeIps, and status.assignedIps returning the ip address if successful
 func (n *Network) Allocate(req ctrl.Request) (string, error) {
+	// reminder: all fields in a crd need to be marshalled to json, so we need to convert the NamespacedName to a string
+	nsnString := utils.NamespacedNameToString(req.NamespacedName)
 	if len(n.Status.FreeIPs) == 0 {
 		return "", ErrorNoIPsAvailable
 	}
 	// check if the pod is already assigned an IP and raise an error if it is
 	for namesapcedName, ip := range n.Status.AssignedIPs {
-		if namesapcedName == req.NamespacedName {
+		if namesapcedName == nsnString {
 			return ip.IP, ErrIPAlreadyAllocated
 		}
 	}
@@ -159,9 +161,9 @@ func (n *Network) Allocate(req ctrl.Request) (string, error) {
 	}
 	// Add the IP to the list of assigned IPs
 	if newStatus.AssignedIPs == nil {
-		newStatus.AssignedIPs = make(AllocatedIPMap)
+		newStatus.AssignedIPs = make(AllocatedIPkey)
 	}
-	newStatus.AssignedIPs[req.NamespacedName] = allocatedIP // Update the status of the network
+	newStatus.AssignedIPs[nsnString] = allocatedIP // Update the status of the network
 	n.Status = *newStatus
 
 	return ip, nil
@@ -179,9 +181,10 @@ func (n *Network) Deallocate(req ctrl.Request) error {
 	logger.Info("Deallocating IP for pod")
 	// create a deep copy of the network status
 	newStatus := n.Status.DeepCopy()
+	nsnString := utils.NamespacedNameToString(req.NamespacedName)
 	// Loop through the assigned IPs
 	for namespacedName, ip := range newStatus.AssignedIPs {
-		if namespacedName == req.NamespacedName {
+		if namespacedName == nsnString {
 			logger.Info("Checking if the pod is assigned the IP", "status.namespacedName", namespacedName, "pod", req.Name, "status.ip", ip.IP)
 			// Remove the IP from the list of assigned IPs
 			delete(newStatus.AssignedIPs, namespacedName)

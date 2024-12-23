@@ -105,7 +105,7 @@ func (r *NetworkReconciler) Initialize(network *ipamv1alpha1.Network) {
 
 	// Update the Network status with the allocated IP addresses
 	network.Status.FreeIPs = allocatableIPs
-	network.Status.AssignedIPs = make(ipamv1alpha1.AllocatedIPMap)
+	network.Status.AssignedIPs = make(ipamv1alpha1.AllocatedIPkey)
 
 	// Set the Initialized condition to True
 	network.SetConditionInitialized(metav1.ConditionTrue)
