@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	ipamv1alpha1 "github.com/jdambly/kettle/api/v1alpha1"
+	"github.com/jdambly/kettle/internal/cache"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,7 +36,8 @@ import (
 // PodReconciler reconciles a Pod object
 type PodReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	PodCache *cache.PodList
 }
 
 //+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;create;update;patch;delete
@@ -63,10 +65,14 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	// Get the value of the network annotation
 	netAnnotaionValue, ok := pod.GetAnnotations()[ipamv1alpha1.NetwotksAnnotation]
 	if !ok {
-		// Todo: fix this error message "Operation cannot be fulfilled on pods \"busybox-pod\": the object has been modified; please apply your changes to the latest version and try again"
-		logger.Error(errPod, "failed to get network annotation", "annotation", netAnnotaionValue)
-		// Todo: some cleanup logic is needed here there could be a case were the network annotation is removed and we missed the update, check if there is a status entry for this pod and remove it
-		return ctrl.Result{}, errPod
+		// check the cache for the pod and get the annotation
+		podCache, podExists := r.PodCache.Get(req.Namespace, req.Name)
+		if podExists {
+			netAnnotaionValue = podCache.Annotations[ipamv1alpha1.NetwotksAnnotation]
+		} else {
+			logger.Error(errPod, "pod is not in cache", "pod", req.Name, "namespace", req.Namespace, "annotation", netAnnotaionValue)
+			return ctrl.Result{}, errPod
+		}
 	}
 	// create a deep copy of the pod to avoid modifying the original object
 	updatedPod := pod.DeepCopy()
@@ -95,17 +101,19 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		return ctrl.Result{Requeue: true}, nil
 	}
 	// create a deep copy of the network to avoid modifying the original object
-	udpatedNetwork := network.DeepCopy()
+	oldNetwork := network.DeepCopy()
 	if errPod != nil {
 		if apierrors.IsNotFound(errPod) {
 			// Object not found, return.  Created objects are automatically garbage collected, we need to garbage collect
 			// the ip addresses and update the network status
-			_ = udpatedNetwork.Deallocate(req)
+			_ = oldNetwork.Deallocate(req)
+			// remove the pod from the cache
+			r.PodCache.Delete(req.Namespace, req.Name)
 			// update the status of the network
-			err := r.Status().Patch(ctx, udpatedNetwork, client.MergeFrom(network))
+			err := r.Status().Patch(ctx, oldNetwork, client.MergeFrom(network))
 			if err != nil {
 				if apierrors.IsConflict(err) {
-					logger.Info("Conflict while updating network, retrying", "error", err, "network", udpatedNetwork.Name)
+					logger.Info("Conflict while updating network, retrying", "error", err, "network", oldNetwork.Name)
 					return ctrl.Result{Requeue: true}, nil
 				}
 				logger.Error(err, "failed to update network status")
@@ -125,10 +133,12 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	}
 	logger.Info("Allocated IP address to pod", "ip", ip)
 	// update the network status
-	err = r.Status().Patch(ctx, udpatedNetwork, client.MergeFrom(network))
+	logger.Info("Updating network status", "network", network.Name, "status", network.Status)
+	err = r.Status().Update(ctx, network)
+	// todo: this should be a patch but for some reason I'm not able to get it to work correctly
 	if err != nil {
 		if apierrors.IsConflict(err) {
-			logger.Info("Conflict while updating network, retrying", "error", err, "network", udpatedNetwork.Name)
+			logger.Info("Conflict while updating network, retrying", "error", err, "network", network.Name)
 			return ctrl.Result{Requeue: true}, nil
 		}
 		logger.Error(err, "failed to update network status")
@@ -160,6 +170,14 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		logger.Error(err, "failed to update pod with network annotation", "annotation", statusAnnotation, "pod", updatedPod.Name, "namespace", updatedPod.Namespace)
 		return ctrl.Result{}, err
 	}
+	// Add the pod to the cache
+	logger.Info("Adding pod to cache", "pod", updatedPod.Name, "namespace", updatedPod.Namespace, "ip", ip)
+	r.PodCache.Add(cache.PodCache{
+		Name:        updatedPod.Name,
+		Namespace:   updatedPod.Namespace,
+		IP:          ip,
+		Annotations: updatedPod.GetAnnotations(),
+	})
 
 	logger.Info("Patched pod with network annotation", "annotation", statusAnnotation)
 	return ctrl.Result{}, nil
@@ -179,6 +197,8 @@ func (r *PodReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}); err != nil {
 		return fmt.Errorf("failed to create field index for pod annotations: %v", err)
 	}
+	// Inject the shared cache into the controller
+	r.PodCache = cache.GetSharedPodList()
 
 	// Create a new controller managed by the manager using watches for pods and f
 	return ctrl.NewControllerManagedBy(mgr).

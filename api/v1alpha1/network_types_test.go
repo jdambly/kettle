@@ -91,7 +91,6 @@ var _ = Describe("Network GetIPs", func() {
 
 	Context("When assigned ip has been detected", func() {
 		BeforeEach(func() {
-			// todo this needs to updated now that the assigned ips are a map
 			network.Status.AssignedIPs = v1alpha1.AllocatedIPkey{
 				"default/test-pod1": {IP: "10.1.0.2", PodName: "test-pod1"},
 				"default/test-pod2": {IP: "10.1.0.3", PodName: "test-pod2"},
@@ -107,6 +106,8 @@ var _ = Describe("Network GetIPs", func() {
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(newErr).ToNot(HaveOccurred())
+			Expect(network.Status.AssignedIPs).To(HaveKeyWithValue("default/test-pod1",
+				v1alpha1.AllocatedIP{IP: "10.1.0.2", PodName: "test-pod1", Namespace: ""}))
 			Expect(allocatableIPs).To(Equal(newAllocatableIPs))
 
 		})
