@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"github.com/jdambly/kettle/pkg/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/json"
@@ -33,7 +34,7 @@ const (
 	ConditionInitialized    = "Initialized"
 	ConditionFreeIPsUpdated = "FreeIPsUpdated"
 	ConditionErrorNoFreeIPs = "ErrorNoFreeIPs"
-	NetwotksAnnotation      = "networking.kettle.io/networks"
+	NetworksAnnotation      = "networking.kettle.io/networks"
 	StatusAnnotation        = "networking.kettle.io/status"
 )
 
@@ -195,7 +196,7 @@ func (n *Network) Deallocate(req ctrl.Request) error {
 			return nil
 		}
 	}
-	return errors.New("Unable to deallocate IP in pod: " + req.Name + " in namespace: " + req.Namespace)
+	return fmt.Errorf("unable to deallocate IP for pod %s in namespace %s: IP not found in assigned IPs", req.Name, req.Namespace)
 }
 
 // GetStatusAnnotation returns the status annotation for the network with all the network details as a string
@@ -376,7 +377,7 @@ func (n *Network) ShouldReconcile(newNetwork *Network) bool {
 			return true
 		}
 	}
-	logger.Info("Filtered event", "newNetwork", newNetwork.Name, "currentNetwork", n.Name)
+	logger.Info("Filtered event", "newNetwork", newNetwork.ObjectMeta.Name, "currentNetwork", n.ObjectMeta.Name)
 	return false
 }
 

@@ -63,12 +63,12 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	errPod := r.Get(ctx, req.NamespacedName, pod)
 	logger.Info("Got pod", "pod", pod, "UID", pod.UID, "error", errPod)
 	// Get the value of the network annotation
-	netAnnotaionValue, ok := pod.GetAnnotations()[ipamv1alpha1.NetwotksAnnotation]
+	netAnnotaionValue, ok := pod.GetAnnotations()[ipamv1alpha1.NetworksAnnotation]
 	if !ok {
 		// check the cache for the pod and get the annotation
 		podCache, podExists := r.PodCache.Get(req.Namespace, req.Name)
 		if podExists {
-			netAnnotaionValue = podCache.Annotations[ipamv1alpha1.NetwotksAnnotation]
+			netAnnotaionValue = podCache.Annotations[ipamv1alpha1.NetworksAnnotation]
 		} else {
 			logger.Error(errPod, "pod is not in cache", "pod", req.Name, "namespace", req.Namespace, "annotation", netAnnotaionValue)
 			return ctrl.Result{}, errPod
@@ -188,9 +188,9 @@ func (r *PodReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// Add an index to help list Pods based on the network annotation.
 	// typically this is done for you but since we are watching objects that are not the primary resource
 	// we need to create the index ourselves
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &corev1.Pod{}, ipamv1alpha1.NetwotksAnnotation, func(rawObj client.Object) []string {
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &corev1.Pod{}, ipamv1alpha1.NetworksAnnotation, func(rawObj client.Object) []string {
 		pod := rawObj.(*corev1.Pod)
-		if network, exists := pod.Annotations[ipamv1alpha1.NetwotksAnnotation]; exists {
+		if network, exists := pod.Annotations[ipamv1alpha1.NetworksAnnotation]; exists {
 			return []string{network}
 		}
 		return nil
@@ -222,7 +222,7 @@ func updatedFilter(e event.UpdateEvent) bool {
 // will only return true if the pod has the annotations for network
 func createFilter(e event.CreateEvent) bool {
 	logger := log.FromContext(context.Background()).WithCallDepth(0).WithValues("pod", e.Object.GetName(), "namespace", e.Object.GetNamespace())
-	_, hasAnnotation := e.Object.GetAnnotations()[ipamv1alpha1.NetwotksAnnotation]
+	_, hasAnnotation := e.Object.GetAnnotations()[ipamv1alpha1.NetworksAnnotation]
 	logger.Info("Create event", "hasAnnotation", hasAnnotation)
 	return hasAnnotation
 }
@@ -232,7 +232,7 @@ func createFilter(e event.CreateEvent) bool {
 func deleteFilter(e event.DeleteEvent) bool {
 	logger := log.FromContext(context.Background()).WithCallDepth(3).WithValues("pod", e.Object.GetName(), "namespace", e.Object.GetNamespace())
 	logger.Info("Delete event", "pod", e.Object.GetName(), "namespace", e.Object.GetNamespace())
-	_, hasNetAnnotation := e.Object.GetAnnotations()[ipamv1alpha1.NetwotksAnnotation]
+	_, hasNetAnnotation := e.Object.GetAnnotations()[ipamv1alpha1.NetworksAnnotation]
 	_, hasStatusAnnotation := e.Object.GetAnnotations()[ipamv1alpha1.StatusAnnotation]
 	logger.Info("Delete event", "hasNetAnnotation", hasNetAnnotation, "hasStatusAnnotation", hasStatusAnnotation, "pod", e.Object.GetName(), "namespace", e.Object.GetNamespace())
 	return hasStatusAnnotation || hasNetAnnotation

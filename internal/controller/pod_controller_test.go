@@ -47,7 +47,7 @@ var _ = Describe("Pod Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 						Annotations: map[string]string{
-							ipamv1alpha1.NetwotksAnnotation: "network1",
+							ipamv1alpha1.NetworksAnnotation: "network1",
 						},
 					},
 					Spec: corev1.PodSpec{
